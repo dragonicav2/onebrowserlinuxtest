@@ -1,0 +1,21 @@
+[Desktop Entry]
+Type=Application
+Name=OneBrowser Zen
+GenericName=Streaming & Entertainment Web Browser
+Comment=Zen Browser–inspired vertical workspace browser optimized for streaming on Bazzite & Linux
+Exec=onebrowser %U
+Icon=io.github.onebrowser.OneBrowser
+Terminal=false
+Categories=Network;WebBrowser;AudioVideo;Player;FileTransfer;
+MimeType=text/html;x-scheme-handler/https;x-scheme-handler/http;
+StartupWMClass=OneBrowser
+Keywords=Browser;Streaming;Zen;YouTube;Twitch;Netflix;Bazzite;Downloader;
+Actions=StreamingWorkspace;TwitchLive;
+
+[Desktop Action StreamingWorkspace]
+Name=Open Streaming Workspace (YouTube)
+Exec=onebrowser https://www.youtube.com
+
+[Desktop Action TwitchLive]
+Name=Launch Twitch Live
+Exec=onebrowser https://www.twitch.tv

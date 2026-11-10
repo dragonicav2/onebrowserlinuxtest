@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181F"/>
+      <stop offset="100%" stop-color="#0E0E11"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E5957C"/>
+      <stop offset="100%" stop-color="#A78BFA"/>
+    </linearGradient>
+  </defs>
+  <!-- Squircle Base -->
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="url(#bgGrad)" stroke="#2E2E3A" stroke-width="6"/>
+  <!-- Zen Vertical Sidebar Indicator -->
+  <rect x="34" y="36" width="44" height="184" rx="16" fill="#202029" stroke="#383846" stroke-width="2"/>
+  <circle cx="56" cy="62" r="8" fill="#E5957C"/>
+  <circle cx="56" cy="90" r="8" fill="#A78BFA"/>
+  <circle cx="56" cy="118" r="8" fill="#34D399"/>
+  <rect x="44" y="146" width="24" height="6" rx="3" fill="#71717A"/>
+  <rect x="44" y="162" width="24" height="6" rx="3" fill="#71717A"/>
+  <!-- Framed Streaming Viewport & Zen Ring -->
+  <rect x="92" y="36" width="130" height="184" rx="20" fill="#131318" stroke="url(#accentGrad)" stroke-width="4"/>
+  <circle cx="157" cy="128" r="38" fill="none" stroke="url(#accentGrad)" stroke-width="8"/>
+  <polygon points="148,112 148,144 174,128" fill="#F4F4F6"/>
+</svg>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.onebrowser.OneBrowser</id>
+  <name>OneBrowser Zen</name>
+  <summary>Zen Browser–inspired streaming and entertainment browser for Linux</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.onebrowser">
+    <name>OneBrowser Project</name>
+  </developer>
+  <description>
+    <p>
+      OneBrowser Zen is a modern Linux desktop browser engineered specifically for streaming,
+      entertainment, and distraction-free browsing on Bazzite Linux and modern Wayland desktops.
+    </p>
+    <ul>
+      <li>Zen Vertical Sidebar with drag-and-drop tab reordering, pinning, audio mute controls, and context menus</li>
+      <li>Multi-Workspace system (Streaming, Entertainment, Gaming, Social, Work) with persistent session recovery</li>
+      <li>Immersive Cinema Mode (F11 / Ctrl+Shift+I) and native Picture-in-Picture (PiP) video controls</li>
+      <li>Side-by-Side Dual Split View (Ctrl+Shift+S) for simultaneous live stream and chat/wiki browsing</li>
+      <li>Hardware-accelerated VA-API, Vulkan, and Mesa RADV video decoding with 16-connection ZeroDownloader</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.onebrowser.OneBrowser.desktop</launchable>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+    <category>AudioVideo</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="3.4.0" date="2026-11-10">
+      <description>
+        <p>Initial Zen Browser–inspired Linux release with Vertical Workspaces, Immersive Cinema Mode, Split View, and Bazzite Flatpak + AppImage support.</p>
+      </description>
+    </release>
+  </releases>
+</component>

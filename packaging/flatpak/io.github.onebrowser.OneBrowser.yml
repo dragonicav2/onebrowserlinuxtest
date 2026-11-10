@@ -1,0 +1,40 @@
+app-id: io.github.onebrowser.OneBrowser
+runtime: org.kde.Platform
+runtime-version: '6.7'
+sdk: org.kde.Sdk
+base: io.qt.qtwebengine.BaseApp
+base-version: '6.7'
+command: onebrowser
+
+finish-args:
+  # Display & Windowing (Wayland primary for Bazzite KDE/GNOME + X11 fallback)
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # Network access for HTTPS browsing & 16x segmented downloads
+  - --share=network
+  # Hardware GPU Acceleration (Mesa RADV, VA-API, Vulkan, NVDEC for 4K60 streaming)
+  - --device=dri
+  # Audio & Media Playback (PipeWire / PulseAudio on Bazzite)
+  - --socket=pulseaudio
+  # Desktop Media Controls (MPRIS2 integration for lockscreen/panel play/pause)
+  - --own-name=org.mpris.MediaPlayer2.OneBrowser.*
+  # Desktop Notifications & Power Management (Inhibit idle sleep during video playback)
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.freedesktop.PowerManagement
+  # Safe File Downloads access via XDG Downloads & Portals
+  - --filesystem=xdg-download
+
+modules:
+  - name: onebrowser-zen
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 linux-appimage/OneBrowser.AppDir/usr/bin/onebrowser_linux.py /app/bin/onebrowser
+      - install -Dm644 crossplatform/zerodownloader.py /app/bin/zerodownloader.py
+      - install -Dm644 packaging/flatpak/io.github.onebrowser.OneBrowser.desktop /app/share/applications/io.github.onebrowser.OneBrowser.desktop
+      - install -Dm644 packaging/flatpak/io.github.onebrowser.OneBrowser.metainfo.xml /app/share/metainfo/io.github.onebrowser.OneBrowser.metainfo.xml
+      - install -Dm644 linux-appimage/OneBrowser.AppDir/onebrowser.svg /app/share/icons/hicolor/scalable/apps/io.github.onebrowser.OneBrowser.svg
+    sources:
+      - type: dir
+        path: ../..

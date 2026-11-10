@@ -1,0 +1,63 @@
+name: Build & Publish OneBrowser Zen Linux Release (Flatpak + AppImage)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v3.4.0)'
+        required: true
+        default: 'v3.4.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-packages:
+    name: Build Flatpak & AppImage for Bazzite / Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build Standalone Type-2 AppImage (OneBrowser-x86_64.AppImage)
+        run: |
+          sudo apt-get update && sudo apt-get install -y squashfs-tools
+          python3 scripts/build_onebrowser_linux_appimage.py
+          chmod +x dist/linux/OneBrowser-x86_64.AppImage
+
+      - name: Install Flatpak & Flatpak Builder
+        run: |
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.kde.Platform//6.7 org.kde.Sdk//6.7 io.qt.qtwebengine.BaseApp//6.7
+
+      - name: Build Single-File Flatpak Bundle (OneBrowser-x86_64.flatpak)
+        run: |
+          flatpak-builder --user --force-clean --repo=obj_flatpak_repo obj_flatpak_build packaging/flatpak/io.github.onebrowser.OneBrowser.yml
+          flatpak build-bundle obj_flatpak_repo dist/linux/OneBrowser-x86_64.flatpak io.github.onebrowser.OneBrowser
+
+      - name: Generate SHA-256 Checksums
+        run: |
+          cd dist/linux
+          sha256sum OneBrowser-x86_64.AppImage OneBrowser-x86_64.flatpak > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name != 'main' && github.ref_name != 'master' && github.ref_name || inputs.tag_name || 'v3.4.0' }}
+          name: "OneBrowser Zen ${{ github.ref_name != 'main' && github.ref_name != 'master' && github.ref_name || inputs.tag_name || 'v3.4.0' }} — Linux & Bazzite Edition"
+          body_path: packaging/GITHUB_RELEASE_NOTES.md
+          files: |
+            dist/linux/OneBrowser-x86_64.flatpak
+            dist/linux/OneBrowser-x86_64.AppImage
+            dist/linux/SHA256SUMS.txt
