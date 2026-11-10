@@ -770,19 +770,576 @@ def configure_linux_chromium_flags() -> None:
 
 
 # ==============================================================================
-# ENGINE 1: NATIVE GTK3 + WEBKIT2GTK ZEN BROWSER (FLATPAK & FEDORA/BAZZITE NATIVE)
+# ENGINE 1A: NATIVE GTK4 + WEBKIT 6.0 ZEN BROWSER (GNOME 47 PLATPAK & UBUNTU 24.04+)
+# ==============================================================================
+
+
+def try_launch_gtk4_zen_browser(initial_url: str) -> bool:
+    """
+    Launches the modern GTK4 + WebKitGTK 6.0 Zen Browser desktop interface.
+    Native engine in GNOME 47 Platform Flatpak (Bazzite/Fedora) and Ubuntu 24.04+.
+    """
+    try:
+        import gi
+
+        gi.require_version("Gtk", "4.0")
+        gi.require_version("Gdk", "4.0")
+        gi.require_version("WebKit", "6.0")
+        from gi.repository import Gdk, Gio, GLib, Gtk, WebKit
+    except Exception:
+        return False
+
+    store = WorkspaceStateStore()
+    all_tabs: list[tuple[TabStateRecord, object]] = []
+    active_tab_id: list[str] = [""]
+    state = {"sidebar_open": True, "immersive": False, "split_open": False, "ephemeral": False}
+    tracked_jobs: list[tuple[core.JobState, object, object]] = []
+
+    try:
+        app = Gtk.Application(
+            application_id="io.github.onebrowser.OneBrowser",
+            flags=getattr(Gio.ApplicationFlags, "NON_UNIQUE", 0),
+        )
+    except Exception:
+        app = Gtk.Application()
+
+    def on_activate(application):
+        win = Gtk.ApplicationWindow(application=application, title="OneBrowser — Zen Streaming & Workspace Edition")
+        win.set_default_size(1380, 860)
+
+        css_provider = Gtk.CssProvider()
+
+        def apply_gtk4_theme(accent: str) -> None:
+            css = f"""
+                window, .zen-root {{ background-color: #0E0E11; color: #F4F4F6; font-family: "Inter", "Cantarell", Sans-Serif; }}
+                .zen-sidebar {{ background-color: #131317; border-right: 1px solid #25252E; padding: 12px; }}
+                .zen-topbar {{ background-color: #131317; border-bottom: 1px solid #25252E; padding: 8px 12px; }}
+                .zen-viewport {{ background-color: #0E0E11; border: 1px solid #25252E; border-radius: 10px; }}
+                .zen-card {{ background-color: #1A1A20; border: 1px solid #25252E; border-radius: 10px; padding: 10px; }}
+                entry {{ background-color: #1A1A20; color: #F4F4F6; border: 1px solid #25252E; border-radius: 16px; padding: 6px 14px; }}
+                entry:focus {{ border-color: {accent}; background-color: #202027; }}
+                button {{ background-image: none; background-color: #1A1A20; color: #F4F4F6; border: 1px solid #25252E; border-radius: 7px; padding: 5px 10px; }}
+                button:hover {{ background-color: #282832; border-color: #383846; }}
+                button.accent-btn {{ background-color: {accent}; color: #0E0E11; font-weight: bold; border: none; }}
+                button.tab-active {{ background-color: #202027; border: 1px solid {accent}; color: #F4F4F6; font-weight: bold; }}
+                button.ws-active {{ background-color: {accent}; color: #0E0E11; font-weight: bold; border: none; }}
+                .section-lbl {{ color: #71717A; font-size: 10px; font-weight: bold; }}
+            """
+            try:
+                if hasattr(css_provider, "load_from_string"):
+                    css_provider.load_from_string(css)
+                else:
+                    css_provider.load_from_data(css.encode("utf-8"))
+            except Exception:
+                try:
+                    css_provider.load_from_data(css)
+                except Exception:
+                    pass
+
+        apply_gtk4_theme(store.active_workspace()["accent"])
+        display = Gdk.Display.get_default()
+        if display:
+            Gtk.StyleContext.add_provider_for_display(
+                display, css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
+        root_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        root_vbox.add_css_class("zen-root")
+        win.set_child(root_vbox)
+
+        # Top Compact Navigation Bar
+        topbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        topbar.add_css_class("zen-topbar")
+
+        btn_sb_toggle = Gtk.Button(label="◨")
+        btn_back = Gtk.Button(label="←")
+        btn_fwd = Gtk.Button(label="→")
+        btn_reload = Gtk.Button(label="↻")
+        badge_lbl = Gtk.Label(label="🛡️ 41.9k")
+
+        url_entry = Gtk.Entry()
+        url_entry.set_placeholder_text("Search DuckDuckGo or enter an HTTPS streaming URL...")
+        url_entry.set_hexpand(True)
+
+        btn_pip = Gtk.Button(label="⧉ PiP")
+        btn_split = Gtk.Button(label="◫ Split")
+        btn_cinema = Gtk.Button(label="🎬 Cinema")
+        btn_dl_toggle = Gtk.Button(label="⬇ 0")
+
+        for w in (btn_sb_toggle, btn_back, btn_fwd, btn_reload, badge_lbl):
+            topbar.append(w)
+        topbar.append(url_entry)
+        for w in (btn_pip, btn_split, btn_cinema, btn_dl_toggle):
+            topbar.append(w)
+
+        root_vbox.append(topbar)
+
+        # Main Body: Left Zen Sidebar + Right Framed Viewport
+        body_hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        body_hbox.set_hexpand(True)
+        body_hbox.set_vexpand(True)
+        root_vbox.append(body_hbox)
+
+        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        sidebar.set_size_request(260, -1)
+        sidebar.add_css_class("zen-sidebar")
+        body_hbox.append(sidebar)
+
+        ws_title = Gtk.Label(label="🎬 STREAMING")
+        ws_title.set_xalign(0.0)
+        ws_title.add_css_class("section-lbl")
+        sidebar.append(ws_title)
+
+        ws_pills_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        sidebar.append(ws_pills_box)
+
+        ess_lbl = Gtk.Label(label="ESSENTIAL STREAMING")
+        ess_lbl.set_xalign(0.0)
+        ess_lbl.add_css_class("section-lbl")
+        sidebar.append(ess_lbl)
+
+        ess_grid = Gtk.Grid()
+        ess_grid.set_column_spacing(6)
+        ess_grid.set_row_spacing(6)
+        ess_grid.set_column_homogeneous(True)
+        for idx, item in enumerate(PINNED_STREAMING_ESSENTIALS):
+            eb = Gtk.Button(label=f"{item['icon']} {item['title']}")
+            eb.connect("clicked", lambda _, u=item["url"], t=item["title"]: create_or_focus_tab(u, t, pinned=True))
+            ess_grid.attach(eb, idx % 2, idx // 2, 1, 1)
+        sidebar.append(ess_grid)
+
+        tabs_lbl = Gtk.Label(label="VERTICAL TABS")
+        tabs_lbl.set_xalign(0.0)
+        tabs_lbl.add_css_class("section-lbl")
+        sidebar.append(tabs_lbl)
+
+        tabs_scroll = Gtk.ScrolledWindow()
+        tabs_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        tabs_scroll.set_vexpand(True)
+        vtabs_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        tabs_scroll.set_child(vtabs_vbox)
+        sidebar.append(tabs_scroll)
+
+        btn_new_tab = Gtk.Button(label="+  New Zen Tab")
+        btn_new_tab.add_css_class("accent-btn")
+        sidebar.append(btn_new_tab)
+
+        # Sidebar Bottom Media Deck
+        media_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        media_card.add_css_class("zen-card")
+        media_lbl = Gtk.Label(label="🎵 Media Deck • Ready")
+        media_lbl.set_xalign(0.0)
+        media_card.append(media_lbl)
+
+        media_btns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        btn_m_play = Gtk.Button(label="⏯")
+        btn_m_mute = Gtk.Button(label="🔊")
+        btn_m_pip = Gtk.Button(label="⧉ PiP")
+        btn_m_restore = Gtk.Button(label="↺ Tab")
+        for b in (btn_m_play, btn_m_mute, btn_m_pip, btn_m_restore):
+            b.set_hexpand(True)
+            media_btns.append(b)
+        media_card.append(media_btns)
+        sidebar.append(media_card)
+
+        # Right Viewport + Split View + Downloader Drawer
+        right_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        right_vbox.set_hexpand(True)
+        right_vbox.set_vexpand(True)
+        right_vbox.set_margin_top(6)
+        right_vbox.set_margin_bottom(6)
+        right_vbox.set_margin_start(6)
+        right_vbox.set_margin_end(6)
+        body_hbox.append(right_vbox)
+
+        paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        paned.set_hexpand(True)
+        paned.set_vexpand(True)
+        right_vbox.append(paned)
+
+        notebook = Gtk.Notebook()
+        notebook.set_show_tabs(False)
+        notebook.set_show_border(False)
+        notebook.set_hexpand(True)
+        notebook.set_vexpand(True)
+        paned.set_start_child(notebook)
+
+        secondary_webview = WebKit.WebView()
+        secondary_webview.set_visible(False)
+        secondary_webview.set_hexpand(True)
+        secondary_webview.set_vexpand(True)
+        paned.set_end_child(secondary_webview)
+
+        # Downloader Drawer
+        dl_drawer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        dl_drawer.add_css_class("zen-card")
+        dl_drawer.set_visible(False)
+
+        dl_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        dl_entry = Gtk.Entry()
+        dl_entry.set_placeholder_text("Paste HTTPS file, .m3u8 stream, or video link for 16x download...")
+        dl_entry.set_hexpand(True)
+        btn_dl_grab = Gtk.Button(label="Grab Tab URL")
+        btn_dl_go = Gtk.Button(label="Start 16x Download")
+        btn_dl_go.add_css_class("accent-btn")
+        dl_row.append(dl_entry)
+        dl_row.append(btn_dl_grab)
+        dl_row.append(btn_dl_go)
+        dl_drawer.append(dl_row)
+
+        dl_jobs_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        dl_drawer.append(dl_jobs_vbox)
+        right_vbox.append(dl_drawer)
+
+        def clear_box(box):
+            while True:
+                child = box.get_first_child()
+                if child is None:
+                    break
+                box.remove(child)
+
+        def get_active_pair() -> tuple[TabStateRecord, object] | None:
+            for r, v in all_tabs:
+                if r.id == active_tab_id[0]:
+                    return r, v
+            return all_tabs[0] if all_tabs else None
+
+        def render_sidebar() -> None:
+            ws = store.active_workspace()
+            ws_title.set_text(f"{ws['icon']} {ws['name'].upper()}")
+            clear_box(ws_pills_box)
+            for w in store.workspaces:
+                b = Gtk.Button(label=w["icon"])
+                b.set_hexpand(True)
+                if w["id"] == store.active_workspace_id:
+                    b.add_css_class("ws-active")
+                b.connect("clicked", lambda _, wid=w["id"]: switch_workspace(wid))
+                ws_pills_box.append(b)
+
+            clear_box(vtabs_vbox)
+            ws_tabs = [
+                (r, v) for r, v in all_tabs
+                if r.workspace_id == store.active_workspace_id or r.pinned
+            ]
+            ws_tabs.sort(key=lambda p: (0 if p[0].pinned else 1))
+            tabs_lbl.set_text(f"OPEN TABS ({len(ws_tabs)})")
+
+            for r, _ in ws_tabs:
+                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                pin_mark = "📌 " if r.pinned else ""
+                mute_mark = " 🔇" if r.muted else ""
+                tb = Gtk.Button(label=f"{pin_mark}{extract_domain_badge(r.url)}  {r.title[:22]}{mute_mark}")
+                tb.set_hexpand(True)
+                if r.id == active_tab_id[0]:
+                    tb.add_css_class("tab-active")
+                tb.connect("clicked", lambda _, tid=r.id: select_tab(tid))
+
+                cb = Gtk.Button(label="✕")
+                cb.connect("clicked", lambda _, tid=r.id: close_tab(tid))
+                row.append(tb)
+                row.append(cb)
+                vtabs_vbox.append(row)
+
+            store.save_state([r for r, _ in all_tabs], state["ephemeral"])
+
+        def load_into_webview(rec: TabStateRecord, webview, raw_url: str) -> None:
+            if raw_url == ZEN_HOME_URI:
+                rec.url = ZEN_HOME_URI
+                rec.title = "Zen Home"
+                ws = store.get_workspace(rec.workspace_id)
+                webview.load_html(build_zen_home_html(ws["name"], ws["icon"], ws["accent"]), "https://onebrowser.local/")
+                return
+            ok, clean, err = resolve_navigation_input(raw_url)
+            if not ok:
+                media_lbl.set_text(f"⚠️ {err}")
+                return
+            rec.url = clean
+            webview.load_uri(clean)
+
+        def create_tab(
+            target_url: str = ZEN_HOME_URI,
+            title: str = "Zen Home",
+            pinned: bool = False,
+            existing: TabStateRecord | None = None,
+        ) -> None:
+            rec = existing or TabStateRecord(
+                title=title,
+                url=target_url,
+                workspace_id=store.active_workspace_id,
+                pinned=pinned,
+            )
+            wv = WebKit.WebView()
+            wv.set_hexpand(True)
+            wv.set_vexpand(True)
+            settings = wv.get_settings()
+            if hasattr(settings, "set_enable_mediasource"):
+                settings.set_enable_mediasource(True)
+            if hasattr(settings, "set_enable_webgl"):
+                settings.set_enable_webgl(True)
+            if hasattr(settings, "set_media_playback_requires_user_gesture"):
+                settings.set_media_playback_requires_user_gesture(False)
+
+            ucm = wv.get_user_content_manager()
+            if hasattr(WebKit, "UserScript"):
+                try:
+                    script = WebKit.UserScript.new(
+                        HARDENING_AND_STREAMING_JS,
+                        WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                        WebKit.UserScriptInjectionTime.START,
+                        None,
+                        None,
+                    )
+                    ucm.add_script(script)
+                except Exception:
+                    pass
+
+            def on_decide_policy(_view, decision, decision_type) -> bool:
+                try:
+                    if hasattr(decision, "get_request"):
+                        req_uri = decision.get_request().get_uri() or ""
+                        req_host = (urllib.parse.urlsplit(req_uri).hostname or "").lower()
+                        if (req_host and is_blocked_domain(req_host)) or is_youtube_ad_request(req_uri):
+                            decision.ignore()
+                            return True
+                except Exception:
+                    pass
+                return False
+
+            wv.connect("decide-policy", on_decide_policy)
+
+            def on_title_changed(view, _param) -> None:
+                t = view.get_title()
+                if t:
+                    rec.title = t
+                    render_sidebar()
+
+            def on_uri_changed(view, _param) -> None:
+                u = view.get_uri() or ""
+                if u and not u.startswith("https://onebrowser.local"):
+                    rec.url = u
+                    if rec.id == active_tab_id[0]:
+                        url_entry.set_text(u)
+                    render_sidebar()
+
+            wv.connect("notify::title", on_title_changed)
+            wv.connect("notify::uri", on_uri_changed)
+
+            notebook.append_page(wv, None)
+            all_tabs.append((rec, wv))
+            load_into_webview(rec, wv, rec.url)
+            select_tab(rec.id)
+
+        def create_or_focus_tab(url: str, title: str, pinned: bool = False) -> None:
+            host = urllib.parse.urlsplit(url).hostname or url
+            for r, _ in all_tabs:
+                if host in r.url:
+                    select_tab(r.id)
+                    return
+            create_tab(url, title, pinned=pinned)
+
+        def select_tab(tid: str) -> None:
+            for r, wv in all_tabs:
+                if r.id == tid:
+                    active_tab_id[0] = tid
+                    page_num = notebook.page_num(wv)
+                    if page_num >= 0:
+                        notebook.set_current_page(page_num)
+                    url_entry.set_text("" if r.url == ZEN_HOME_URI else r.url)
+                    render_sidebar()
+                    return
+
+        def close_tab(tid: str) -> None:
+            idx = next((i for i, (r, _) in enumerate(all_tabs) if r.id == tid), -1)
+            if idx < 0:
+                return
+            r, wv = all_tabs.pop(idx)
+            store.closed_tabs_stack.append(r)
+            page_num = notebook.page_num(wv)
+            if page_num >= 0:
+                notebook.remove_page(page_num)
+            ws_tabs = [rec for rec, _ in all_tabs if rec.workspace_id == store.active_workspace_id or rec.pinned]
+            if not ws_tabs:
+                create_tab(ZEN_HOME_URI)
+            else:
+                select_tab(ws_tabs[-1].id)
+
+        def switch_workspace(wid: str) -> None:
+            store.active_workspace_id = wid
+            apply_gtk4_theme(store.active_workspace()["accent"])
+            ws_tabs = [r for r, _ in all_tabs if r.workspace_id == wid or r.pinned]
+            if not ws_tabs:
+                create_tab(ZEN_HOME_URI)
+            else:
+                select_tab(ws_tabs[0].id)
+
+        def run_js(code: str) -> None:
+            pair = get_active_pair()
+            if not pair:
+                return
+            wv = pair[1]
+            if hasattr(wv, "evaluate_javascript"):
+                try:
+                    wv.evaluate_javascript(code, -1, None, None, None, None, None)
+                except Exception:
+                    pass
+            elif hasattr(wv, "run_javascript"):
+                try:
+                    wv.run_javascript(code, None, None, None)
+                except Exception:
+                    pass
+
+        def toggle_immersive() -> None:
+            state["immersive"] = not state["immersive"]
+            if state["immersive"]:
+                topbar.set_visible(False)
+                sidebar.set_visible(False)
+                win.fullscreen()
+            else:
+                topbar.set_visible(True)
+                sidebar.set_visible(True)
+                win.unfullscreen()
+
+        def toggle_split() -> None:
+            state["split_open"] = not state["split_open"]
+            secondary_webview.set_visible(state["split_open"])
+            if state["split_open"]:
+                secondary_webview.load_uri("https://www.twitch.tv")
+                paned.set_position(720)
+
+        def start_download() -> None:
+            ok, clean, err = resolve_navigation_input(dl_entry.get_text())
+            if not ok:
+                media_lbl.set_text(f"⚠️ {err}")
+                return
+            out_dir = core.default_download_dir()
+            out_dir.mkdir(parents=True, exist_ok=True)
+            job = core.JobState(clean, out_dir, 16, "best")
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            lbl = Gtk.Label(label=f"{job.file_name[:32]} — Starting...")
+            lbl.set_hexpand(True)
+            row.append(lbl)
+            dl_jobs_vbox.append(row)
+            tracked_jobs.append((job, lbl, row))
+            btn_dl_toggle.set_label(f"⬇ {len(tracked_jobs)}")
+            threading.Thread(target=core.run_job, args=(job,), daemon=True).start()
+            dl_entry.set_text("")
+
+        btn_sb_toggle.connect("clicked", lambda _: sidebar.set_visible(not sidebar.get_visible()))
+        btn_back.connect("clicked", lambda _: get_active_pair()[1].go_back() if get_active_pair() else None)
+        btn_fwd.connect("clicked", lambda _: get_active_pair()[1].go_forward() if get_active_pair() else None)
+        btn_reload.connect("clicked", lambda _: get_active_pair()[1].reload() if get_active_pair() else None)
+        url_entry.connect(
+            "activate",
+            lambda _: load_into_webview(get_active_pair()[0], get_active_pair()[1], url_entry.get_text())
+            if get_active_pair()
+            else None,
+        )
+        btn_new_tab.connect("clicked", lambda _: create_tab(ZEN_HOME_URI))
+        btn_pip.connect(
+            "clicked",
+            lambda _: run_js("const v=document.querySelector('video'); if(v&&v.requestPictureInPicture) v.requestPictureInPicture();"),
+        )
+        btn_m_pip.connect(
+            "clicked",
+            lambda _: run_js("const v=document.querySelector('video'); if(v&&v.requestPictureInPicture) v.requestPictureInPicture();"),
+        )
+        btn_m_play.connect(
+            "clicked",
+            lambda _: run_js("const v=document.querySelector('video,audio'); if(v){if(v.paused)v.play();else v.pause();}"),
+        )
+        btn_m_mute.connect(
+            "clicked",
+            lambda _: run_js("document.querySelectorAll('video,audio').forEach(e=>e.muted=!e.muted);"),
+        )
+        btn_m_restore.connect(
+            "clicked",
+            lambda _: create_tab(existing=store.closed_tabs_stack.pop()) if store.closed_tabs_stack else None,
+        )
+        btn_cinema.connect("clicked", lambda _: toggle_immersive())
+        btn_split.connect("clicked", lambda _: toggle_split())
+        btn_dl_toggle.connect(
+            "clicked",
+            lambda _: dl_drawer.set_visible(not dl_drawer.get_visible()),
+        )
+        btn_dl_grab.connect(
+            "clicked",
+            lambda _: dl_entry.set_text(get_active_pair()[0].url if get_active_pair() else ""),
+        )
+        btn_dl_go.connect("clicked", lambda _: start_download())
+
+        key_controller = Gtk.EventControllerKey.new()
+
+        def on_key_pressed(_ctrl, keyval, keycode, state_mask) -> bool:
+            keyname = Gdk.keyval_name(keyval) or ""
+            ctrl = bool(state_mask & Gdk.ModifierType.CONTROL_MASK)
+            shift = bool(state_mask & Gdk.ModifierType.SHIFT_MASK)
+            if keyname == "F11" or (ctrl and shift and keyname.lower() == "i"):
+                toggle_immersive()
+                return True
+            if keyname == "Escape" and state["immersive"]:
+                toggle_immersive()
+                return True
+            if ctrl and shift and keyname.lower() == "v":
+                sidebar.set_visible(not sidebar.get_visible())
+                return True
+            if ctrl and shift and keyname.lower() == "s":
+                toggle_split()
+                return True
+            if ctrl and keyname.lower() == "t":
+                create_tab(ZEN_HOME_URI)
+                return True
+            if ctrl and keyname.lower() == "w" and active_tab_id[0]:
+                close_tab(active_tab_id[0])
+                return True
+            return False
+
+        key_controller.connect("key-pressed", on_key_pressed)
+        win.add_controller(key_controller)
+
+        def update_dl_progress() -> bool:
+            for job, lbl, _ in tracked_jobs:
+                spd = f" • {core.format_bytes(job.speed_bps)}/s" if job.speed_bps > 1 else ""
+                lbl.set_text(f"{job.file_name[:32]} — {job.detail} ({job.progress:.0f}%){spd}")
+            return True
+
+        GLib.timeout_add(300, update_dl_progress)
+
+        saved = store.load_state()
+        if saved:
+            for r in saved:
+                create_tab(existing=r)
+        else:
+            create_tab(initial_url if initial_url != HOME_URL else ZEN_HOME_URI)
+
+        win.present()
+
+    app.connect("activate", on_activate)
+    try:
+        app.run([sys.argv[0]] if sys.argv else None)
+        return True
+    except Exception:
+        try:
+            app.run(None)
+            return True
+        except Exception:
+            return False
+
+
+# ==============================================================================
+# ENGINE 1B: NATIVE GTK3 + WEBKIT2GTK ZEN BROWSER (UBUNTU 22.04 & OLDER DISTROS)
 # ==============================================================================
 
 
 def try_launch_gtk_webkit_zen_browser(initial_url: str) -> bool:
     """
     Launches the native GTK3 + WebKit2GTK Zen Browser–inspired desktop interface.
-    100% built into the org.gnome.Platform Flatpak runtime on Bazzite & Linux.
+    Used on older Linux distributions (Ubuntu 22.04, Debian 11/12) with GTK 3.
     """
     try:
         import gi
 
         gi.require_version("Gtk", "3.0")
+        gi.require_version("Gdk", "3.0")
         try:
             gi.require_version("WebKit2", "4.1")
         except ValueError:
@@ -1806,15 +2363,19 @@ def main() -> int:
         if ok:
             initial = clean
 
-    # 1. Try Native GTK3 + WebKit2GTK (Built into GNOME Flatpak Runtime & Fedora/Bazzite)
+    # 1. Try Native GTK4 + WebKitGTK 6.0 (Built into GNOME 47 Platform Flatpak & Ubuntu 24.04+)
+    if try_launch_gtk4_zen_browser(initial):
+        return 0
+
+    # 2. Try Native GTK3 + WebKit2GTK (Older Linux distros / Ubuntu 22.04 LTS)
     if try_launch_gtk_webkit_zen_browser(initial):
         return 0
 
-    # 2. Try Native PyQt6 / PyQt5 QtWebEngine
+    # 3. Try Native PyQt6 / PyQt5 QtWebEngine
     if try_launch_qt_zen_browser(initial):
         return 0
 
-    # 3. Universal Self-Contained Zen Desktop Shell (Works on 100% of Linux systems with zero deps)
+    # 4. Universal Self-Contained Zen Desktop Shell (Works on 100% of Linux systems with zero deps)
     launch_zen_local_desktop_engine(initial)
     return 0
 

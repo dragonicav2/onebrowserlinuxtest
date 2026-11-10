@@ -5,8 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 MANIFEST="${SCRIPT_DIR}/io.github.onebrowser.OneBrowser.yml"
-BUILD_DIR="/tmp/onebrowser_flatpak_build"
-REPO_DIR="/tmp/onebrowser_flatpak_repo"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/dist/build}"
+REPO_DIR="${REPO_DIR:-${ROOT_DIR}/dist/repo}"
 OUT_BUNDLE="${ROOT_DIR}/dist/linux/OneBrowser-x86_64.flatpak"
 
 mkdir -p "${ROOT_DIR}/dist/linux"
