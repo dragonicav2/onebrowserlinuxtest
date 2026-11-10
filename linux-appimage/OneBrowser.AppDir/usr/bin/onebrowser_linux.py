@@ -120,7 +120,68 @@ BLOCKED_AD_DOMAINS = (
     "popads.net", "popcash.net", "exoclick.com", "realsrv.com", "juicyads.com",
     "trafficjunky.net", "acscdn.com", "chpadblock.com", "blockadblock.com", "fuckadblock.com",
     "admiral.com", "fundingchoicesmessages.google.com", "pagead2.googlesyndication.com",
+    "adservice.google.com", "ads.youtube.com", "s0.2mdn.net", "static.doubleclick.net",
 )
+
+YOUTUBE_AD_PATH_PATTERNS = (
+    "/youtubei/v1/player/ad_break",
+    "/api/stats/ads",
+    "/api/stats/atr",
+    "/pagead/interaction",
+    "/pagead/lvz",
+    "/pagead/adview",
+    "/pagead/conversion",
+    "/get_midroll_info",
+    "/ptracking",
+)
+
+YOUTUBE_AD_QUERY_PATTERNS = (
+    "ad_type=",
+    "adformat=",
+    "ad_system=",
+    "oad=",
+)
+
+
+def _load_shared_adblock_rules() -> dict:
+    candidates = [
+        HERE / "youtube_adblock_rules.json",
+        HERE.parent.parent.parent / "crossplatform" / "youtube_adblock_rules.json",
+        Path("/app/bin/youtube_adblock_rules.json"),
+    ]
+    for c in candidates:
+        try:
+            if c.is_file():
+                return json.loads(c.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+_SHARED_RULES = _load_shared_adblock_rules()
+if isinstance(_SHARED_RULES.get("ad_domains"), list):
+    BLOCKED_AD_DOMAINS = tuple(dict.fromkeys([*BLOCKED_AD_DOMAINS, *_SHARED_RULES["ad_domains"]]))
+if isinstance(_SHARED_RULES.get("youtube_ad_path_patterns"), list):
+    YOUTUBE_AD_PATH_PATTERNS = tuple(dict.fromkeys([*YOUTUBE_AD_PATH_PATTERNS, *_SHARED_RULES["youtube_ad_path_patterns"]]))
+if isinstance(_SHARED_RULES.get("youtube_ad_query_patterns"), list):
+    YOUTUBE_AD_QUERY_PATTERNS = tuple(dict.fromkeys([*YOUTUBE_AD_QUERY_PATTERNS, *_SHARED_RULES["youtube_ad_query_patterns"]]))
+
+
+def is_youtube_ad_request(url: str) -> bool:
+    if not url:
+        return False
+    u = url.lower()
+    if any(dom in u for dom in ("doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.", "s0.2mdn.net")):
+        return True
+    if "youtube.com" in u or "googlevideo.com" in u:
+        for pat in YOUTUBE_AD_PATH_PATTERNS:
+            if pat in u:
+                return True
+        if "googlevideo.com/videoplayback" in u and ("&oad=" in u or "?oad=" in u or "&ctier=l" in u):
+            return True
+        if ("/pagead/" in u or "/api/stats/ads" in u) and any(q in u for q in YOUTUBE_AD_QUERY_PATTERNS):
+            return True
+    return False
 
 
 def is_private_or_reserved_host(host: str) -> bool:
@@ -224,7 +285,7 @@ def extract_domain_badge(url: str) -> str:
     return (host[:1].upper() if host else "🌐")
 
 
-HARDENING_AND_STREAMING_JS = """
+BASE_HARDENING_JS = """
 (() => {
   try {
     window.open = function() { return null; };
@@ -246,6 +307,199 @@ HARDENING_AND_STREAMING_JS = """
   } catch (_) {}
 })();
 """
+
+FALLBACK_YOUTUBE_ADBLOCK_JS = """
+(() => {
+  'use strict';
+  if (window.__obYouTubeAdBlockActive) return;
+  window.__obYouTubeAdBlockActive = true;
+  const host = (location.hostname || '').toLowerCase();
+  if (!(host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be' || host.endsWith('.youtube-nocookie.com'))) return;
+
+  const AD_PRUNE_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams'];
+  const pruneYouTubePayload = (obj, depth = 0) => {
+    if (!obj || typeof obj !== 'object' || depth > 5) return obj;
+    try {
+      for (const k of AD_PRUNE_KEYS) { if (k in obj) delete obj[k]; }
+      if (obj.auxiliaryUi && obj.auxiliaryUi.messageRenderers) {
+        delete obj.auxiliaryUi.messageRenderers.enforcementMessageViewModel;
+        delete obj.auxiliaryUi.messageRenderers.bkaEnforcementMessageViewModel;
+      }
+      if (obj.playabilityStatus && obj.playabilityStatus.errorScreen) {
+        const rawStr = JSON.stringify(obj.playabilityStatus.errorScreen);
+        if (rawStr && rawStr.toLowerCase().includes('ad blocker')) {
+          obj.playabilityStatus.status = 'OK';
+          delete obj.playabilityStatus.errorScreen;
+        }
+      }
+      if (obj.playerResponse && typeof obj.playerResponse === 'object') pruneYouTubePayload(obj.playerResponse, depth + 1);
+      if (Array.isArray(obj.onResponseReceivedEndpoints)) {
+        for (const ep of obj.onResponseReceivedEndpoints) pruneYouTubePayload(ep, depth + 1);
+      }
+    } catch (_) {}
+    return obj;
+  };
+
+  const trapGlobalProperty = (propName) => {
+    try {
+      let internalVal = window[propName];
+      if (internalVal && typeof internalVal === 'object') pruneYouTubePayload(internalVal);
+      Object.defineProperty(window, propName, {
+        configurable: true, enumerable: true,
+        get() { return internalVal; },
+        set(newVal) { internalVal = pruneYouTubePayload(newVal); }
+      });
+    } catch (_) {}
+  };
+  trapGlobalProperty('ytInitialPlayerResponse');
+  trapGlobalProperty('ytInitialData');
+
+  const isYouTubeAdEndpoint = (urlStr) => {
+    if (!urlStr || typeof urlStr !== 'string') return false;
+    const u = urlStr.toLowerCase();
+    return u.includes('/youtubei/v1/player/ad_break') || u.includes('/api/stats/ads') ||
+           u.includes('/pagead/interaction') || u.includes('/pagead/lvz') ||
+           u.includes('/pagead/adview') || u.includes('/get_midroll_info') ||
+           u.includes('doubleclick.net') || u.includes('googlesyndication.com') || u.includes('googleadservices.com');
+  };
+
+  try {
+    const origJsonParse = JSON.parse;
+    JSON.parse = function () { return pruneYouTubePayload(origJsonParse.apply(this, arguments)); };
+  } catch (_) {}
+  try {
+    if (window.Response && Response.prototype.json) {
+      const origResJson = Response.prototype.json;
+      Response.prototype.json = function () { return origResJson.apply(this, arguments).then(d => pruneYouTubePayload(d)); };
+    }
+  } catch (_) {}
+  try {
+    if (typeof window.fetch === 'function') {
+      const origFetch = window.fetch;
+      window.fetch = function (input) {
+        try {
+          const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+          if (isYouTubeAdEndpoint(url)) {
+            return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+          }
+        } catch (_) {}
+        return origFetch.apply(this, arguments);
+      };
+    }
+  } catch (_) {}
+  try {
+    if (typeof XMLHttpRequest !== 'undefined' && XMLHttpRequest.prototype) {
+      const origOpen = XMLHttpRequest.prototype.open;
+      const origSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function (method, url) {
+        this.__obReqUrl = typeof url === 'string' ? url : '';
+        return origOpen.apply(this, arguments);
+      };
+      XMLHttpRequest.prototype.send = function () {
+        if (this.__obReqUrl && isYouTubeAdEndpoint(this.__obReqUrl)) {
+          try {
+            Object.defineProperty(this, 'status', { get: () => 200 });
+            Object.defineProperty(this, 'readyState', { get: () => 4 });
+            Object.defineProperty(this, 'responseText', { get: () => '{}' });
+            Object.defineProperty(this, 'response', { get: () => '{}' });
+            setTimeout(() => { if (typeof this.onload === 'function') this.onload(); this.dispatchEvent(new Event('load')); }, 1);
+            return;
+          } catch (_) {}
+        }
+        return origSend.apply(this, arguments);
+      };
+    }
+  } catch (_) {}
+
+  const COSMETIC_CSS = `
+    ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-promoted-sparkles-web-renderer,
+    ytd-promoted-video-renderer, ytd-display-ad-renderer, ytd-statement-banner-renderer,
+    ytd-banner-promo-renderer, ytd-video-masthead-ad-v3-renderer, ytd-primetime-promo-renderer,
+    ytd-companion-slot-renderer, ytd-action-companion-ad-renderer, ytd-image-companion-ad-renderer,
+    ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
+    ytd-enforcement-message-view-model, ytm-promoted-sparkles-web-renderer,
+    ytm-promoted-video-renderer, ytm-companion-ad-renderer, ytm-statement-banner-renderer,
+    #masthead-ad, #player-ads, #offer-module, .ytp-ad-overlay-container, .ytp-ad-message-container,
+    .ytp-featured-product, .ytd-mealbar-promo-renderer,
+    tp-yt-paper-dialog:has(ytd-enforcement-message-view-model) {
+      display: none !important; visibility: hidden !important; height: 0 !important;
+      margin: 0 !important; padding: 0 !important; pointer-events: none !important;
+    }
+  `;
+  const injectCss = () => {
+    try {
+      const root = document.head || document.documentElement;
+      if (root && !document.getElementById('ob-yt-adblock-css')) {
+        const s = document.createElement('style');
+        s.id = 'ob-yt-adblock-css';
+        s.textContent = COSMETIC_CSS;
+        root.appendChild(s);
+      }
+    } catch (_) {}
+  };
+
+  const SKIP_SEL = '.ytp-ad-skip-button,.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button,.ytp-ad-overlay-close-button,button.ytp-ad-skip-button-modern';
+  let wasMutedByAdGuard = false;
+  let userPlaybackRate = 1.0;
+
+  const mitigateAds = () => {
+    try {
+      injectCss();
+      const modal = document.querySelector('ytd-enforcement-message-view-model, tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)');
+      if (modal) {
+        modal.remove();
+        const bd = document.querySelector('tp-yt-iron-overlay-backdrop');
+        if (bd) bd.remove();
+        const v = document.querySelector('video.html5-main-video, video');
+        if (v && v.paused) v.play().catch(() => {});
+      }
+      document.querySelectorAll(SKIP_SEL).forEach(b => { if (b && typeof b.click === 'function') b.click(); });
+      const player = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting, .ad-showing');
+      const video = document.querySelector('video.html5-main-video, .html5-video-player video, video');
+      if (player && video) {
+        if (!wasMutedByAdGuard) {
+          wasMutedByAdGuard = true;
+          if (video.playbackRate > 0 && video.playbackRate <= 2) userPlaybackRate = video.playbackRate;
+        }
+        video.muted = true;
+        if (Number.isFinite(video.duration) && video.duration > 0.5) {
+          video.currentTime = Math.max(0, video.duration - 0.05);
+        } else {
+          video.playbackRate = 16.0;
+        }
+        if (video.paused) video.play().catch(() => {});
+      } else if (wasMutedByAdGuard && video) {
+        wasMutedByAdGuard = false;
+        video.muted = false;
+        video.playbackRate = userPlaybackRate || 1.0;
+      }
+    } catch (_) {}
+  };
+  injectCss();
+  setInterval(mitigateAds, 200);
+  window.addEventListener('yt-navigate-finish', mitigateAds);
+  window.addEventListener('yt-page-data-updated', mitigateAds);
+})();
+"""
+
+
+def _load_shared_youtube_adblock_js() -> str:
+    candidates = [
+        HERE / "youtube_adblock_engine.js",
+        HERE.parent.parent.parent / "crossplatform" / "youtube_adblock_engine.js",
+        Path("/app/bin/youtube_adblock_engine.js"),
+    ]
+    for c in candidates:
+        try:
+            if c.is_file():
+                return c.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    return FALLBACK_YOUTUBE_ADBLOCK_JS
+
+
+YOUTUBE_ADBLOCK_JS = _load_shared_youtube_adblock_js()
+HARDENING_AND_STREAMING_JS = BASE_HARDENING_JS + "\n" + YOUTUBE_ADBLOCK_JS
 
 
 def build_zen_home_html(workspace_name: str, workspace_icon: str, accent: str) -> str:
@@ -789,7 +1043,7 @@ def try_launch_gtk_webkit_zen_browser(initial_url: str) -> bool:
             settings.set_media_playback_requires_user_gesture(False)
 
         ucm = wv.get_user_content_manager()
-        if hasattr( WebKit2, "UserScript"):
+        if hasattr(WebKit2, "UserScript"):
             script = WebKit2.UserScript.new(
                 HARDENING_AND_STREAMING_JS,
                 WebKit2.UserContentInjectedFrames.ALL_FRAMES,
@@ -798,6 +1052,20 @@ def try_launch_gtk_webkit_zen_browser(initial_url: str) -> bool:
                 None,
             )
             ucm.add_script(script)
+
+        def on_decide_policy(_view, decision, decision_type) -> bool:
+            try:
+                if hasattr(decision, "get_request"):
+                    req_uri = decision.get_request().get_uri() or ""
+                    req_host = (urllib.parse.urlsplit(req_uri).hostname or "").lower()
+                    if (req_host and is_blocked_domain(req_host)) or is_youtube_ad_request(req_uri):
+                        decision.ignore()
+                        return True
+            except Exception:
+                pass
+            return False
+
+        wv.connect("decide-policy", on_decide_policy)
 
         def on_title_changed(view, _param) -> None:
             t = view.get_title()
@@ -1082,11 +1350,49 @@ def try_launch_qt_zen_browser(initial_url: str) -> bool:
             return False
 
     configure_linux_chromium_flags()
+
+    class ZenAdBlockInterceptor(QWebEngineUrlRequestInterceptor):
+        def interceptRequest(self, info) -> None:
+            qurl = info.requestUrl()
+            scheme = qurl.scheme().lower()
+            host = qurl.host().lower()
+            raw_url = qurl.toString()
+            if scheme == "http" and host and not is_private_or_reserved_host(host):
+                upgraded = QUrl(qurl)
+                upgraded.setScheme("https")
+                info.redirect(upgraded)
+                return
+            if scheme != "https" or is_private_or_reserved_host(host) or is_blocked_domain(host) or is_youtube_ad_request(raw_url):
+                info.block(True)
+
     app = QApplication(sys.argv[:1])
     store = WorkspaceStateStore()
     win = QMainWindow()
     win.setWindowTitle("OneBrowser — Zen Streaming & Workspace Edition (Linux)")
     win.resize(1380, 860)
+
+    interceptor = ZenAdBlockInterceptor()
+    prof = QWebEngineProfile.defaultProfile()
+    if hasattr(prof, "setUrlRequestInterceptor"):
+        prof.setUrlRequestInterceptor(interceptor)
+    elif hasattr(prof, "setRequestInterceptor"):
+        prof.setRequestInterceptor(interceptor)
+
+    script = QWebEngineScript()
+    script.setName("OneBrowserYouTubeAdBlockAndHardening")
+    script.setSourceCode(HARDENING_AND_STREAMING_JS)
+    script.setInjectionPoint(
+        QWebEngineScript.InjectionPoint.DocumentCreation
+        if is_pyqt6
+        else QWebEngineScript.DocumentCreation
+    )
+    script.setWorldId(
+        QWebEngineScript.ScriptWorldId.MainWorld
+        if is_pyqt6
+        else QWebEngineScript.MainWorld
+    )
+    script.setRunsOnSubFrames(True)
+    prof.scripts().insert(script)
 
     view = QWebEngineView()
     ws = store.active_workspace()
@@ -1306,7 +1612,89 @@ ZEN_DESKTOP_SHELL_HTML = """<!DOCTYPE html>
 """
 
 
+def ensure_chromium_adblock_extension() -> Path | None:
+    """
+    Materializes an unpacked Manifest V3 extension containing the shared YouTube Ad-Block Engine
+    so Engine 3 (--app mode on stock Bazzite/Linux) runs the exact same document_start MAIN-world
+    YouTube ad-blocker and declarativeNetRequest rules.
+    """
+    try:
+        config_root = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+        ext_dir = config_root / "onebrowser" / "yt_adblock_mv3"
+        ext_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "manifest_version": 3,
+            "name": "OneBrowser YouTube Ad-Block & Stream Guard",
+            "version": "1.0.0",
+            "description": "Shared cross-platform YouTube ad-blocker & stream guard for OneBrowser.",
+            "permissions": ["declarativeNetRequest"],
+            "host_permissions": ["*://*.youtube.com/*", "*://*.googlevideo.com/*", "*://*.doubleclick.net/*", "*://*.googlesyndication.com/*"],
+            "declarative_net_request": {
+                "rule_resources": [{"id": "yt_ads", "enabled": True, "path": "rules.json"}]
+            },
+            "content_scripts": [
+                {
+                    "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"],
+                    "js": ["youtube_adblock_engine.js"],
+                    "run_at": "document_start",
+                    "world": "MAIN",
+                    "all_frames": True,
+                }
+            ],
+        }
+        dnr_rules = [
+            {"id": 1, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||doubleclick.net^"}},
+            {"id": 2, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||googlesyndication.com^"}},
+            {"id": 3, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||googleadservices.com^"}},
+            {"id": 4, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||youtube.com/api/stats/ads"}},
+            {"id": 5, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||youtube.com/pagead/"}},
+            {"id": 6, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||youtube.com/ptracking"}},
+            {"id": 7, "priority": 1, "action": {"type": "block"}, "condition": {"urlFilter": "||youtube.com/get_midroll_info"}},
+        ]
+        (ext_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        (ext_dir / "rules.json").write_text(json.dumps(dnr_rules, indent=2), encoding="utf-8")
+        (ext_dir / "youtube_adblock_engine.js").write_text(YOUTUBE_ADBLOCK_JS, encoding="utf-8")
+        return ext_dir
+    except Exception:
+        return None
+
+
+def open_url_crossplatform(url: str, app_mode: bool = False, window_size: str = "1360,860") -> subprocess.Popen | None:
+    cmd = find_linux_browser_command()
+    if cmd:
+        is_ff = "firefox" in cmd[-1].lower() or "librewolf" in cmd[-1].lower()
+        args = [*cmd]
+        if not is_ff:
+            ext_dir = ensure_chromium_adblock_extension()
+            if ext_dir is not None and not (cmd[0] == "flatpak"):
+                args.append(f"--load-extension={ext_dir}")
+        if app_mode and not is_ff:
+            args.extend([f"--app={url}", f"--window-size={window_size}"])
+        else:
+            args.append(url)
+        return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.name == "nt":
+        try:
+            os.startfile(url)  # type: ignore[attr-defined]
+        except Exception:
+            import webbrowser
+            webbrowser.open(url)
+        return None
+    subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return None
+
+
 def find_linux_browser_command() -> list[str] | None:
+    if os.name == "nt":
+        win_candidates = [
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Microsoft/Edge/Application/msedge.exe",
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Microsoft/Edge/Application/msedge.exe",
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Google/Chrome/Application/chrome.exe",
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "BraveSoftware/Brave-Browser/Application/brave.exe",
+        ]
+        for wc in win_candidates:
+            if wc.is_file():
+                return [str(wc)]
     for b in (
         "brave-browser", "chromium", "chromium-browser", "google-chrome",
         "microsoft-edge", "vivaldi",
@@ -1339,7 +1727,7 @@ def find_linux_browser_command() -> list[str] | None:
 def launch_zen_local_desktop_engine(initial_url: str) -> None:
     """
     Starts a local loopback Zen Desktop Shell server and opens it in a native
-    frameless desktop window on Bazzite / Linux. Zero external Python deps required.
+    frameless desktop window on Bazzite / Linux / Windows. Zero external Python deps required.
     """
     jobs: list[core.JobState] = []
 
@@ -1353,11 +1741,7 @@ def launch_zen_local_desktop_engine(initial_url: str) -> None:
                 q = dict(urllib.parse.parse_qsl(parsed.query)).get("url", "")
                 ok, clean, err = resolve_navigation_input(q)
                 if ok:
-                    cmd = find_linux_browser_command()
-                    if cmd and "firefox" not in cmd[-1].lower():
-                        subprocess.Popen([*cmd, f"--app={clean}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    else:
-                        subprocess.Popen(["xdg-open", clean], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    open_url_crossplatform(clean, app_mode=True)
                 body = json.dumps({"ok": ok, "url": clean, "error": err}).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1399,18 +1783,7 @@ def launch_zen_local_desktop_engine(initial_url: str) -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     shell_url = f"http://127.0.0.1:{port}/"
-    cmd = find_linux_browser_command()
-    proc = None
-    if cmd and "firefox" not in cmd[-1].lower():
-        proc = subprocess.Popen(
-            [*cmd, f"--app={shell_url}", "--window-size=1360,860"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    elif cmd:
-        proc = subprocess.Popen([*cmd, shell_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    else:
-        subprocess.Popen(["xdg-open", shell_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = open_url_crossplatform(shell_url, app_mode=True, window_size="1380,860")
 
     try:
         if proc is not None:

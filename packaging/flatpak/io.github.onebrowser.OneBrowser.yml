@@ -30,6 +30,8 @@ modules:
     build-commands:
       - install -Dm755 onebrowser_linux.py /app/bin/onebrowser
       - install -Dm644 zerodownloader.py /app/bin/zerodownloader.py
+      - install -Dm644 youtube_adblock_rules.json /app/bin/youtube_adblock_rules.json
+      - install -Dm644 youtube_adblock_engine.js /app/bin/youtube_adblock_engine.js
       - install -Dm644 io.github.onebrowser.OneBrowser.desktop /app/share/applications/io.github.onebrowser.OneBrowser.desktop
       - install -Dm644 io.github.onebrowser.OneBrowser.metainfo.xml /app/share/metainfo/io.github.onebrowser.OneBrowser.metainfo.xml
       - install -Dm644 onebrowser.svg /app/share/icons/hicolor/scalable/apps/io.github.onebrowser.OneBrowser.svg
@@ -38,6 +40,10 @@ modules:
         path: ../../linux-appimage/OneBrowser.AppDir/usr/bin/onebrowser_linux.py
       - type: file
         path: ../../crossplatform/zerodownloader.py
+      - type: file
+        path: ../../crossplatform/youtube_adblock_rules.json
+      - type: file
+        path: ../../crossplatform/youtube_adblock_engine.js
       - type: file
         path: io.github.onebrowser.OneBrowser.desktop
       - type: file

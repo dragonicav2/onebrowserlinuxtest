@@ -43,8 +43,8 @@ jobs:
 
       - name: Build Single-File Flatpak Bundle (OneBrowser-x86_64.flatpak)
         run: |
-          flatpak-builder --user --disable-rofiles-fuse --force-clean --repo=/tmp/ob_flatpak_repo /tmp/ob_flatpak_build packaging/flatpak/io.github.onebrowser.OneBrowser.yml
-          flatpak build-bundle /tmp/ob_flatpak_repo dist/linux/OneBrowser-x86_64.flatpak io.github.onebrowser.OneBrowser --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder --user --disable-rofiles-fuse --force-clean --state-dir=.flatpak-builder --repo=.flatpak-repo .flatpak-build packaging/flatpak/io.github.onebrowser.OneBrowser.yml
+          flatpak build-bundle .flatpak-repo dist/linux/OneBrowser-x86_64.flatpak io.github.onebrowser.OneBrowser --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
 
       - name: Generate SHA-256 Checksums
         run: |

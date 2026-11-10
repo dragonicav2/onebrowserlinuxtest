@@ -25,10 +25,12 @@ def prepare_staging_appdir() -> Path:
     usr_bin = stage / "usr" / "bin"
     usr_bin.mkdir(parents=True, exist_ok=True)
     shutil.copy2(PORTABLE_PY, usr_bin / "zerodownloader.py")
+    shutil.copy2(ROOT / "crossplatform" / "youtube_adblock_rules.json", usr_bin / "youtube_adblock_rules.json")
+    shutil.copy2(ROOT / "crossplatform" / "youtube_adblock_engine.js", usr_bin / "youtube_adblock_engine.js")
     shutil.copy2(stage / "onebrowser.svg", stage / ".DirIcon")
 
     for p in stage.rglob("*"):
-        if p.is_file() and (p.suffix in ("", ".py", ".desktop", ".svg") or p.name in ("AppRun", ".DirIcon")):
+        if p.is_file() and (p.suffix in ("", ".py", ".js", ".json", ".desktop", ".svg") or p.name in ("AppRun", ".DirIcon")):
             p.write_bytes(p.read_bytes().replace(b"\r\n", b"\n"))
         if p.is_file() and (p.name == "AppRun" or p.suffix == ".py"):
             try:
