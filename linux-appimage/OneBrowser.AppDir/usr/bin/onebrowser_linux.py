@@ -812,7 +812,7 @@ def try_launch_gtk4_zen_browser(initial_url: str) -> bool:
         def apply_gtk4_theme(accent: str) -> None:
             css = f"""
                 window, .zen-root {{ background-color: #0E0E11; color: #F4F4F6; font-family: "Inter", "Cantarell", Sans-Serif; }}
-                .zen-sidebar {{ background-color: #131317; border-right: 1px solid #25252E; padding: 12px; }}
+                .zen-sidebar {{ background-color: #131317; border-right: 1px solid #25252E; padding: 12px; min-width: 250px; max-width: 260px; }}
                 .zen-topbar {{ background-color: #131317; border-bottom: 1px solid #25252E; padding: 8px 12px; }}
                 .zen-viewport {{ background-color: #0E0E11; border: 1px solid #25252E; border-radius: 10px; }}
                 .zen-card {{ background-color: #1A1A20; border: 1px solid #25252E; border-radius: 10px; padding: 10px; }}
@@ -882,6 +882,7 @@ def try_launch_gtk4_zen_browser(initial_url: str) -> bool:
 
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         sidebar.set_size_request(260, -1)
+        sidebar.set_hexpand(False)
         sidebar.add_css_class("zen-sidebar")
         body_hbox.append(sidebar)
 
