@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag (e.g. v3.4.0)'
+        description: 'Release Tag (e.g. v3.4.1)'
         required: true
-        default: 'v3.4.0'
+        default: 'v3.4.1'
 
 permissions:
   contents: write
@@ -34,16 +34,17 @@ jobs:
           python3 scripts/build_onebrowser_linux_appimage.py
           chmod +x dist/linux/OneBrowser-x86_64.AppImage
 
-      - name: Install Flatpak & Flatpak Builder
+      - name: Configure Ubuntu 24.04 User Namespaces & Install Flatpak Builder
         run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo apt-get install -y flatpak flatpak-builder
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub org.kde.Platform//6.7 org.kde.Sdk//6.7 io.qt.qtwebengine.BaseApp//6.7
+          flatpak install --user -y flathub org.gnome.Platform//47 org.gnome.Sdk//47
 
       - name: Build Single-File Flatpak Bundle (OneBrowser-x86_64.flatpak)
         run: |
-          flatpak-builder --user --force-clean --repo=obj_flatpak_repo obj_flatpak_build packaging/flatpak/io.github.onebrowser.OneBrowser.yml
-          flatpak build-bundle obj_flatpak_repo dist/linux/OneBrowser-x86_64.flatpak io.github.onebrowser.OneBrowser
+          flatpak-builder --user --disable-rofiles-fuse --force-clean --repo=/tmp/ob_flatpak_repo /tmp/ob_flatpak_build packaging/flatpak/io.github.onebrowser.OneBrowser.yml
+          flatpak build-bundle /tmp/ob_flatpak_repo dist/linux/OneBrowser-x86_64.flatpak io.github.onebrowser.OneBrowser --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
 
       - name: Generate SHA-256 Checksums
         run: |
@@ -54,8 +55,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name != 'main' && github.ref_name != 'master' && github.ref_name || inputs.tag_name || 'v3.4.0' }}
-          name: "OneBrowser Zen ${{ github.ref_name != 'main' && github.ref_name != 'master' && github.ref_name || inputs.tag_name || 'v3.4.0' }} — Linux & Bazzite Edition"
+          tag_name: ${{ github.ref_name != 'main' && github.ref_name != 'master' && github.ref_name || inputs.tag_name || 'v3.4.1' }}
+          name: "OneBrowser Zen ${{ github.ref_name != 'main' && github.ref_name != 'master' && github.ref_name || inputs.tag_name || 'v3.4.1' }} — Linux & Bazzite Edition"
           body_path: packaging/GITHUB_RELEASE_NOTES.md
           files: |
             dist/linux/OneBrowser-x86_64.flatpak

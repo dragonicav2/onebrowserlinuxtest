@@ -237,10 +237,10 @@ def build_squashfs4_le(stage_dir: Path) -> bytes:
         if n.is_dir:
             mode = 0o755
             nlink = 2 + sum(1 for c in n.children if c.is_dir)
-            # squashfs_dir_inode_header: <HHHHIIIHHIH (32 bytes)
+            # squashfs_dir_inode_header: <HHHHIIIIHHI (32 bytes)
             uncomp_inode_stream.extend(
                 struct.pack(
-                    "<HHHHIIIHHIH",
+                    "<HHHHIIIIHHI",
                     1,  # SQUASHFS_DIR_TYPE
                     mode,
                     0,  # uid idx
@@ -277,6 +277,9 @@ def build_squashfs4_le(stage_dir: Path) -> bytes:
             for bsz in n.block_sizes:
                 uncomp_inode_stream.extend(struct.pack("<I", bsz))
 
+    assert len(uncomp_inode_stream) == running_ino_off, (
+        f"Inode stream size mismatch: {len(uncomp_inode_stream)} != {running_ino_off}"
+    )
     inode_table_bytes, _ = pack_meta_table(bytes(uncomp_inode_stream))
     dir_table_bytes, _ = pack_meta_table(bytes(uncomp_dir_stream))
     id_meta_bytes, _ = pack_meta_table(struct.pack("<I", 0))

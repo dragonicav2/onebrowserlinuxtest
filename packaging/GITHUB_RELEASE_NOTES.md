@@ -1,4 +1,4 @@
-# 🎬 OneBrowser Zen `v3.4.0` — Linux & Bazzite Streaming Edition
+# 🎬 OneBrowser Zen `v3.4.1` — Linux & Bazzite Streaming Edition
 
 **OneBrowser Zen** is a modern Linux desktop browser built on the OneBrowser engine with a **Zen Browser–inspired vertical workspace and tab interface**, designed specifically as a distraction-free **streaming and entertainment environment** on **Bazzite Linux** and modern Wayland/X11 desktops.
 
@@ -8,7 +8,7 @@
 
 | Format | File in Assets Below | Best For |
 | :--- | :--- | :--- |
-| **Flatpak Bundle (Primary)** | `OneBrowser-x86_64.flatpak` | **Bazzite Linux**, SteamOS, Fedora Atomic, and immutable desktops (includes all sandboxed runtimes & desktop integration). |
+| **Flatpak Bundle (Primary)** | `OneBrowser-x86_64.flatpak` | **Bazzite Linux**, SteamOS, Fedora Atomic, and immutable desktops (includes native GTK3 + WebKit2GTK runtime & desktop integration). |
 | **AppImage (Secondary)** | `OneBrowser-x86_64.AppImage` | **Portable 1-file execution** — no installation required; integrates directly with Bazzite's **Gear Lever**. |
 | **Checksums** | `SHA256SUMS.txt` | SHA-256 integrity verification hashes. |
 
@@ -27,8 +27,8 @@ Flatpak is the native application format on **Bazzite** and automatically manage
 Open a terminal (**Ptyxis** / **Konsole**) and run:
 
 ```bash
-# 1. Ensure the Flathub KDE 6.7 WebEngine base runtime is present (one-time)
-flatpak install --user -y flathub org.kde.Platform//6.7 io.qt.qtwebengine.BaseApp//6.7
+# 1. Ensure the Flathub GNOME 47 runtime is installed (already present on most Bazzite systems)
+flatpak install --user -y flathub org.gnome.Platform//47
 
 # 2. Download & install OneBrowser Zen Flatpak
 curl -LO https://github.com/OWNER/REPO/releases/latest/download/OneBrowser-x86_64.flatpak
@@ -60,8 +60,6 @@ chmod +x OneBrowser-x86_64.AppImage
 ./OneBrowser-x86_64.AppImage
 ```
 
-> **Note for AppImage users on minimal distros:** The AppImage uses the system's `PyQt6-WebEngine` if installed (`sudo dnf install python3-pyqt6-webengine` on Fedora, `sudo apt install python3-pyqt6 python3-pyqt6.qtwebengine` on Ubuntu/Debian, or `sudo pacman -S python-pyqt6-webengine` on Arch), and includes a built-in zero-dependency Zen desktop fallback if QtWebEngine is absent. For a 100% self-contained runtime on Bazzite, use the **Flatpak** above.
-
 ---
 
 ## ✨ Key Features & Keyboard Shortcuts
@@ -71,6 +69,5 @@ chmod +x OneBrowser-x86_64.AppImage
 * **Immersive Cinema Mode (`F11` or `Ctrl+Shift+I`)**: Collapses all browser toolbars and sidebars for borderless edge-to-edge video playback (`Esc` to exit).
 * **Sidebar Media Deck & Picture-in-Picture (`⧉ PiP`)**: Control Play/Pause, Tab Audio Mute (`Ctrl+M`), Volume (`0–100%`), and native Picture-in-Picture directly from the bottom of the sidebar.
 * **Dual Split-Screen Tiling (`Ctrl+Shift+S`)**: Watch a live stream on the left while browsing Twitch chat, Reddit, or a game wiki on the right.
-* **Quick Command Palette (`Ctrl+K`)**: Instant keyboard launcher to jump across tabs, workspaces, and streaming actions.
-* **Built-in 16x ZeroDownloader (`Ctrl+J`)**: Segmented multi-connection downloader with HLS `.m3u8` and stream extraction support.
+* **Built-in 16x ZeroDownloader**: Segmented multi-connection downloader with HLS `.m3u8` and stream extraction support.
 * **Linux Hardware Acceleration**: Configured out-of-the-box for VA-API, Vulkan, and Mesa RADV (AMD Radeon / Steam Deck / ROG Ally / Desktop Bazzite).

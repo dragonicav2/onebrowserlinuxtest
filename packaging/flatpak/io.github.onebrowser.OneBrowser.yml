@@ -1,9 +1,7 @@
 app-id: io.github.onebrowser.OneBrowser
-runtime: org.kde.Platform
-runtime-version: '6.7'
-sdk: org.kde.Sdk
-base: io.qt.qtwebengine.BaseApp
-base-version: '6.7'
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
 command: onebrowser
 
 finish-args:
@@ -30,11 +28,19 @@ modules:
   - name: onebrowser-zen
     buildsystem: simple
     build-commands:
-      - install -Dm755 linux-appimage/OneBrowser.AppDir/usr/bin/onebrowser_linux.py /app/bin/onebrowser
-      - install -Dm644 crossplatform/zerodownloader.py /app/bin/zerodownloader.py
-      - install -Dm644 packaging/flatpak/io.github.onebrowser.OneBrowser.desktop /app/share/applications/io.github.onebrowser.OneBrowser.desktop
-      - install -Dm644 packaging/flatpak/io.github.onebrowser.OneBrowser.metainfo.xml /app/share/metainfo/io.github.onebrowser.OneBrowser.metainfo.xml
-      - install -Dm644 linux-appimage/OneBrowser.AppDir/onebrowser.svg /app/share/icons/hicolor/scalable/apps/io.github.onebrowser.OneBrowser.svg
+      - install -Dm755 onebrowser_linux.py /app/bin/onebrowser
+      - install -Dm644 zerodownloader.py /app/bin/zerodownloader.py
+      - install -Dm644 io.github.onebrowser.OneBrowser.desktop /app/share/applications/io.github.onebrowser.OneBrowser.desktop
+      - install -Dm644 io.github.onebrowser.OneBrowser.metainfo.xml /app/share/metainfo/io.github.onebrowser.OneBrowser.metainfo.xml
+      - install -Dm644 onebrowser.svg /app/share/icons/hicolor/scalable/apps/io.github.onebrowser.OneBrowser.svg
     sources:
-      - type: dir
-        path: ../..
+      - type: file
+        path: ../../linux-appimage/OneBrowser.AppDir/usr/bin/onebrowser_linux.py
+      - type: file
+        path: ../../crossplatform/zerodownloader.py
+      - type: file
+        path: io.github.onebrowser.OneBrowser.desktop
+      - type: file
+        path: io.github.onebrowser.OneBrowser.metainfo.xml
+      - type: file
+        path: ../../linux-appimage/OneBrowser.AppDir/onebrowser.svg
